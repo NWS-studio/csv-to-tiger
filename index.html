@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cutlist → .tiger</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Convert a cutlist CSV to a TigerStop .tiger file. Runs entirely in the browser.">
+<meta name="color-scheme" content="light dark">
+</head>
+<body>
+<style>
+  :root {
+    --ground: #F2F5F6;
+    --surface: #FFFFFF;
+    --surface-2: #E9EEF0;
+    --ink: #15212B;
+    --muted: #5E7280;
+    --line: #D3DCE0;
+    --line-strong: #B6C3C9;
+    --accent: #0E7C86;
+    --accent-soft: #DCEEEF;
+    --on-accent: #FFFFFF;
+    --ok: #2E7D52;
+    --warn: #A8600F;
+    --bad: #B23A2B;
+    --bad-soft: #F7E4E1;
+
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
+    --s5: 24px; --s6: 32px; --s7: 48px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0E171E; --surface: #16222B; --surface-2: #1E2C36;
+      --ink: #E4ECEF; --muted: #92A7B2; --line: #26343E; --line-strong: #3A4C58;
+      --accent: #3BB3BC; --accent-soft: #12313A; --on-accent: #06171A;
+      --ok: #57B681; --warn: #D2952F; --bad: #E0705C; --bad-soft: #331F1C;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #F2F5F6; --surface: #FFFFFF; --surface-2: #E9EEF0;
+    --ink: #15212B; --muted: #5E7280; --line: #D3DCE0; --line-strong: #B6C3C9;
+    --accent: #0E7C86; --accent-soft: #DCEEEF; --on-accent: #FFFFFF;
+    --ok: #2E7D52; --warn: #A8600F; --bad: #B23A2B; --bad-soft: #F7E4E1;
+  }
+  :root[data-theme="dark"] {
+    --ground: #0E171E; --surface: #16222B; --surface-2: #1E2C36;
+    --ink: #E4ECEF; --muted: #92A7B2; --line: #26343E; --line-strong: #3A4C58;
+    --accent: #3BB3BC; --accent-soft: #12313A; --on-accent: #06171A;
+    --ok: #57B681; --warn: #D2952F; --bad: #E0705C; --bad-soft: #331F1C;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1140px; margin: 0 auto;
+    padding: var(--s6) var(--s5) var(--s7);
+    display: flex; flex-direction: column; gap: var(--s6);
+  }
+
+  .masthead { padding-bottom: var(--s3); border-bottom: 2px solid var(--ink); }
+  .masthead h1 { margin: 0; font-size: 25px; letter-spacing: -0.015em; font-weight: 620; }
+  .masthead h1 code { font-family: var(--mono); font-size: .86em; color: var(--accent); }
+
+  .stage { display: flex; flex-direction: column; gap: var(--s3); }
+  .stage[hidden] { display: none; }
+  .stage-head {
+    display: flex; align-items: baseline; gap: var(--s3);
+    border-bottom: 1px solid var(--line); padding-bottom: var(--s2);
+  }
+  .stage-num {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    color: var(--accent); font-weight: 600;
+  }
+  .stage-head h2 { margin: 0; font-size: 15px; font-weight: 640; }
+  .tally {
+    margin-left: auto; font-family: var(--mono); font-size: 11px;
+    letter-spacing: .04em; color: var(--muted); white-space: nowrap;
+  }
+  .tally b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* drop */
+  .drop {
+    border: 2px dashed var(--line-strong); border-radius: 3px;
+    background: var(--surface); padding: var(--s6) var(--s5);
+    text-align: center; cursor: pointer;
+    transition: border-color .15s, background .15s;
+    display: flex; flex-direction: column; align-items: center; gap: var(--s1);
+  }
+  .drop:hover, .drop:focus-visible {
+    border-color: var(--accent); background: var(--accent-soft); outline: none;
+  }
+  .drop.over { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+  .drop-lead { font-size: 16px; font-weight: 560; }
+  .drop-sub { font-size: 13px; color: var(--muted); }
+
+  /* ===== column strip ===== */
+  .strip {
+    display: flex; overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: 3px;
+    touch-action: pan-y;
+  }
+  .col {
+    flex: 0 0 auto; min-width: 138px;
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .col:last-child { border-right: none; }
+  .col.is-length { background: var(--accent-soft); }
+  .col.is-split { background: var(--surface-2); }
+  .col.dragging { opacity: .35; }
+  .col.drop-before::before,
+  .col.drop-after::after {
+    content: ""; position: absolute; top: 0; bottom: 0; width: 3px;
+    background: var(--accent); z-index: 2;
+  }
+  .col.drop-before::before { left: -2px; }
+  .col.drop-after::after { right: -2px; }
+
+  .col-grip {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--s2); padding: 5px var(--s3) 4px;
+    cursor: grab; user-select: none; -webkit-user-select: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .col-grip:active { cursor: grabbing; }
+  .col-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .grip-dots {
+    font-family: var(--mono); font-size: 12px; line-height: 1;
+    color: var(--line-strong); letter-spacing: -1px;
+  }
+  .col-grip:hover .grip-dots { color: var(--accent); }
+  .role {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+    padding: 1px 5px; border-radius: 2px;
+  }
+  .role.length { background: var(--accent); color: var(--on-accent); }
+  .role.split { color: var(--accent); border: 1px dashed var(--accent); }
+  .role.slot { color: var(--muted); }
+
+  .col-name {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+    padding: var(--s2) var(--s3) var(--s1);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .col-meta {
+    padding: 0 var(--s3) var(--s2);
+    font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    color: var(--muted); white-space: nowrap;
+  }
+  .col-meta.cand { color: var(--warn); }
+
+  .col-ctrl {
+    display: flex; gap: var(--s1); padding: 0 var(--s3) var(--s2);
+    border-bottom: 1px solid var(--line);
+  }
+  .tog {
+    flex: 1; font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+    padding: 4px 0; text-align: center;
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--line-strong); border-radius: 2px; cursor: pointer;
+  }
+  .tog:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .tog[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: var(--on-accent);
+  }
+  .tog:disabled { opacity: .3; cursor: not-allowed; }
+  .tog:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .col-vals { padding: var(--s2) var(--s3) var(--s3); }
+  .col-vals div {
+    font-family: var(--mono); font-size: 11.5px;
+    font-variant-numeric: tabular-nums; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.7;
+  }
+  .col.is-length .col-vals div { color: var(--ink); }
+
+  /* readout */
+  .readout {
+    background: #101820; border: 1px solid #2A3A45; border-radius: 3px;
+    padding: var(--s3); overflow-x: auto;
+  }
+  .readout table {
+    border-collapse: collapse; font-family: var(--mono); font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .readout th {
+    text-align: left; color: #D9973B; letter-spacing: .08em; font-weight: 500;
+    font-size: 10.5px; text-transform: uppercase;
+    padding: var(--s1) var(--s4) var(--s2) 0; border-bottom: 1px solid #2A3A45;
+    white-space: nowrap;
+  }
+  .readout td {
+    color: #C9D6DD; padding: 3px var(--s4) 3px 0;
+    border-bottom: 1px solid #1C2831; white-space: nowrap;
+  }
+  .readout .len { color: #6FD3A4; }
+  .readout .none { color: #64757F; font-style: italic; }
+
+  /* files */
+  .files {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 3px; overflow-x: auto;
+  }
+  .files table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .files th {
+    text-align: left; font-family: var(--mono); font-size: 10px;
+    letter-spacing: .11em; text-transform: uppercase; color: var(--muted);
+    font-weight: 500; padding: var(--s2) var(--s4);
+    border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+  }
+  .files td {
+    padding: var(--s2) var(--s4); border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .files tbody tr:last-child td { border-bottom: none; }
+  .files .n { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+  .files a.dl {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+    color: var(--accent); text-decoration: none;
+    border-bottom: 1px solid transparent;
+  }
+  .files a.dl:hover, .files a.dl:focus-visible {
+    border-bottom-color: var(--accent); outline: none;
+  }
+
+  /* inputs */
+  input[type="text"] {
+    font-family: var(--mono); font-size: 13px; padding: 7px var(--s3);
+    background: var(--ground); border: 1px solid var(--line-strong);
+    border-radius: 2px; color: var(--ink); width: 100%;
+  }
+  input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+  label.inline {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
+  }
+
+  button.primary {
+    font-family: var(--sans); font-size: 14px; font-weight: 560;
+    padding: 11px var(--s5); background: var(--accent);
+    border: 1px solid var(--accent); border-radius: 2px;
+    color: var(--on-accent); cursor: pointer; white-space: nowrap;
+  }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  button.primary:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .name-row { display: flex; gap: var(--s4); align-items: flex-end; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: var(--s1); flex: 1; min-width: 220px; }
+
+  /* status */
+  .status { display: flex; flex-direction: column; gap: var(--s2); }
+  .line {
+    display: flex; align-items: baseline; gap: var(--s4); font-size: 13.5px;
+    padding: var(--s2) var(--s3); background: var(--surface);
+    border-left: 3px solid var(--line-strong);
+  }
+  .line.good { border-left-color: var(--ok); }
+  .line.bad { border-left-color: var(--bad); background: var(--bad-soft); }
+  .line.warn { border-left-color: var(--warn); }
+  .line .k {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
+    flex: 0 0 auto; min-width: 7ch;
+  }
+  .line.bad .k { color: var(--bad); }
+  .line.warn .k { color: var(--warn); }
+  .line .v { flex: 1; min-width: 0; }
+  .line .v ul { margin: var(--s1) 0 0; padding-left: var(--s4); }
+  .line .v li { font-family: var(--mono); font-size: 12.5px; }
+  .line b { font-variant-numeric: tabular-nums; }
+  .line code { font-family: var(--mono); font-size: 12px; }
+
+  .sr {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <h1>Cutlist → <code>.tiger</code></h1>
+  </header>
+
+  <section class="stage" id="stage-load">
+    <div class="stage-head"><span class="stage-num">01</span><h2>Cutlist</h2></div>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose or drop a CSV cutlist">
+      <span class="drop-lead" id="drop-lead">Drop a .csv</span>
+      <span class="drop-sub">or click to choose</span>
+    </div>
+    <input type="file" id="file" accept=".csv,text/csv" class="sr">
+    <div class="status" id="load-status"></div>
+  </section>
+
+  <section class="stage" id="stage-map" hidden>
+    <div class="stage-head">
+      <span class="stage-num">02</span><h2>Columns</h2>
+      <span class="tally" id="col-tally"></span>
+    </div>
+    <div class="strip" id="strip"></div>
+    <div class="readout"><table id="preview"></table></div>
+    <div class="status" id="map-status"></div>
+  </section>
+
+  <section class="stage" id="stage-export" hidden>
+    <div class="stage-head">
+      <span class="stage-num">03</span><h2>Write</h2>
+      <span class="tally" id="file-tally"></span>
+    </div>
+    <div class="name-row">
+      <div class="field">
+        <label class="inline" for="fname">File name prefix</label>
+        <input type="text" id="fname" spellcheck="false">
+      </div>
+      <button class="primary" id="save" disabled>Save</button>
+    </div>
+    <div class="files" id="files"></div>
+    <div class="status" id="save-status"></div>
+  </section>
+
+</div>
+
+<script>
+"use strict";
+
+const SYNONYMS = {
+  length: ["length", "length(mm)", "length mm", "cut length", "cutlength", "len", "tube length"],
+  tube:   ["tube #", "tube#", "tube no", "tube number", "tube", "#", "no", "num", "id", "piece"],
+  radius: ["radius", "radius(mm)", "radius mm", "rad"],
+  flute:  ["flute", "flute #", "flute count", "flute type", "flt", "flutes"],
+  vent:   ["vent", "ventlet"],
+  chunk:  ["chunk"],
+  sled:   ["sled", "sled width", "sled width(mm)"],
+};
+const MIN_MM = 153, MAX_MM = 2438, MAX_LABELS = 5, SAMPLE = 5;
+
+let ST = null;
+const $ = id => document.getElementById(id);
+
+/* ---------- CSV ---------- */
+function parseCSV(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = []; let row = [], val = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { val += '"'; i++; } else q = false; }
+      else val += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(val); val = ""; }
+    else if (c === "\r") { /* paired with \n */ }
+    else if (c === "\n") { row.push(val); rows.push(row); row = []; val = ""; }
+    else val += c;
+  }
+  if (val !== "" || row.length) { row.push(val); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ""));
+}
+
+const norm = s => s.trim().toLowerCase().replace(/\s+/g, " ");
+const bare = s => s.replace(/[^a-z0-9]/g, "");
+function matchField(name) {
+  const n = norm(name);
+  for (const [f, list] of Object.entries(SYNONYMS)) if (list.includes(n)) return f;
+  for (const [f, list] of Object.entries(SYNONYMS))
+    if (list.some(s => bare(n) === bare(s))) return f;
+  return null;
+}
+
+function profile(rows, header) {
+  return header.map((h, i) => {
+    const vals = rows.map(r => (r[i] ?? "").trim());
+    const nums = vals.map(v => (v === "" ? NaN : Number(v)));
+    const allNum = nums.every(Number.isFinite);
+    let median = null;
+    if (allNum && nums.length) {
+      const s = [...nums].sort((a, b) => a - b);
+      median = s[Math.floor(s.length / 2)];
+    }
+    return {
+      idx: i, name: h, vals, allNum, median, uniq: new Set(vals).size,
+      field: matchField(h),
+      inBand: allNum && median !== null && median >= MIN_MM && median <= MAX_MM,
+    };
+  });
+}
+
+/* ---------- .tiger ---------- */
+const esc = s => String(s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+
+function buildTiger(name, rowIdx, lenCol, defs) {
+  const L = [];
+  L.push('<?xml version="1.0" encoding="utf-8"?>');
+  L.push('<CutList xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">');
+  // Element order is load-bearing — TigerTouch reads a fixed sequence.
+  L.push("  <style>Setpoint</style>");
+  L.push("  <unit>Metric</unit>");
+  L.push("  <isOptimized>false</isOptimized>");
+  L.push("  <headCut>0</headCut>");
+  L.push("  <tailCut>0</tailCut>");
+  L.push("  <patternStockLength>0</patternStockLength>");
+  L.push("  <repeatCount>0</repeatCount>");
+  L.push("  <sequenceNumber>1</sequenceNumber>");
+  L.push("  <sortString />");
+  L.push("  <sendFileName>true</sendFileName>");
+  L.push("  <fname>" + esc(name) + "</fname>");
+  L.push("  <quantityMultiples>false</quantityMultiples>");
+  L.push("  <isInfinite>false</isInfinite>");
+  L.push("  <isCascade>false</isCascade>");
+  L.push("  <printStrings>");
+  defs.forEach((d, n) => {
+    L.push("    <LabelField>");
+    L.push("      <header>" + esc(d.name) + "</header>");
+    L.push("      <fontSize>12</fontSize>");
+    L.push("      <x>0</x>");
+    L.push("      <y>" + (n * 24) + "</y>");
+    L.push("      <column>" + d.idx + "</column>");
+    L.push("    </LabelField>");
+  });
+  L.push("  </printStrings>");
+  L.push("  <pieces>");
+  rowIdx.forEach(r => {
+    L.push("    <Piece>");
+    L.push("      <labelStrings>");
+    defs.forEach(d => L.push("        <string>" + esc(d.vals[r]) + "</string>"));
+    L.push("      </labelStrings>");
+    L.push("      <length>" + lenCol.vals[r] + "</length>");
+    L.push("      <quantity>1</quantity>");
+    L.push("      <angle1>0</angle1>");
+    L.push("      <angle2>0</angle2>");
+    L.push("    </Piece>");
+  });
+  L.push("  </pieces>");
+  L.push("</CutList>");
+  return L.join("\r\n");
+}
+
+/* ---------- minimal store-only ZIP, for the multi-file fallback ---------- */
+const CRC = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zip(entries) {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  const parts = [], central = [];
+  let offset = 0;
+
+  entries.forEach(e => {
+    const nameB = enc.encode(e.name);
+    const dataB = enc.encode(e.text);
+    const crc = crc32(dataB);
+
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true);
+    lh.setUint16(6, 0x0800, true);   // UTF-8 filename
+    lh.setUint16(8, 0, true);        // stored
+    lh.setUint16(10, dosTime, true);
+    lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, dataB.length, true);
+    lh.setUint32(22, dataB.length, true);
+    lh.setUint16(26, nameB.length, true);
+    lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), nameB, dataB);
+
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true);
+    cd.setUint16(4, 20, true);
+    cd.setUint16(6, 20, true);
+    cd.setUint16(8, 0x0800, true);
+    cd.setUint16(10, 0, true);
+    cd.setUint16(12, dosTime, true);
+    cd.setUint16(14, dosDate, true);
+    cd.setUint32(16, crc, true);
+    cd.setUint32(20, dataB.length, true);
+    cd.setUint32(24, dataB.length, true);
+    cd.setUint16(28, nameB.length, true);
+    cd.setUint16(30, 0, true);
+    cd.setUint16(32, 0, true);
+    cd.setUint16(34, 0, true);
+    cd.setUint16(36, 0, true);
+    cd.setUint32(38, 0, true);
+    cd.setUint32(42, offset, true);
+    central.push(new Uint8Array(cd.buffer), nameB);
+
+    offset += 30 + nameB.length + dataB.length;
+  });
+
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true);
+  eo.setUint16(8, entries.length, true);
+  eo.setUint16(10, entries.length, true);
+  eo.setUint32(12, cdSize, true);
+  eo.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(eo.buffer)], { type: "application/zip" });
+}
+
+/* ---------- grouping ---------- */
+const safe = s => String(s).replace(/[<>:"/\\|?*\x00-\x1f]/g, "").replace(/\s+/g, " ").trim();
+
+function displayDefs() {
+  return ST.order.filter(i => ST.shown.includes(i)).map(i => ST.cols[i]);
+}
+
+function groups() {
+  const base = ($("fname").value || "cutlist").trim();
+  const n = ST.lengthIdx === null ? 0 : ST.cols[ST.lengthIdx].vals.length;
+  if (ST.splitIdx === null) {
+    return [{ label: null, file: safe(base) || "cutlist",
+              rows: Array.from({ length: n }, (_, i) => i) }];
+  }
+  const map = new Map();
+  ST.cols[ST.splitIdx].vals.forEach((v, i) => {
+    const k = v === "" ? "(blank)" : v;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(i);
+  });
+  return [...map.entries()].map(([k, rows]) => ({
+    label: k, rows,
+    file: [safe(base), safe(k)].filter(Boolean).join("-") || "cutlist",
+  }));
+}
+
+/* ---------- render ---------- */
+const fmt = n => n === null ? "—"
+  : (Math.abs(n) >= 1000 || Number.isInteger(n)) ? n.toLocaleString("en-US") : n.toFixed(2);
+
+function statusLine(kind, key, html) {
+  const d = document.createElement("div");
+  d.className = "line" + (kind ? " " + kind : "");
+  d.innerHTML = '<span class="k">' + key + '</span><span class="v">' + html + "</span>";
+  return d;
+}
+
+function renderStrip() {
+  const strip = $("strip");
+  strip.innerHTML = "";
+  const shownOrder = ST.order.filter(i => ST.shown.includes(i));
+
+  ST.order.forEach(idx => {
+    const c = ST.cols[idx];
+    const isLen = idx === ST.lengthIdx;
+    const isSplit = idx === ST.splitIdx;
+    const shown = ST.shown.includes(idx);
+    const full = ST.shown.length >= MAX_LABELS && !shown;
+
+    const d = document.createElement("div");
+    d.className = "col" + (isLen ? " is-length" : "") + (isSplit ? " is-split" : "");
+    d.dataset.idx = idx;
+
+    const badge = isLen ? '<span class="role length">LENGTH</span>'
+      : isSplit ? '<span class="role split">SPLIT</span>'
+      : shown ? '<span class="role slot">' +
+          String(shownOrder.indexOf(idx) + 1).padStart(2, "0") + "</span>"
+      : "<span></span>";
+
+    const meta = c.allNum
+      ? '<div class="col-meta' + (c.inBand && !isLen ? " cand" : "") + '">' +
+          (c.inBand && !isLen ? "IN RANGE · " : "") + "med " + fmt(c.median) + "</div>"
+      : '<div class="col-meta">' + c.uniq + " values</div>";
+
+    let vals = "";
+    for (let r = 0; r < Math.min(SAMPLE, c.vals.length); r++)
+      vals += "<div>" + esc(c.vals[r] || "·") + "</div>";
+
+    d.innerHTML =
+      '<div class="col-grip" tabindex="0" role="button" ' +
+        'aria-label="Reorder ' + esc(c.name) + '. Drag, or hold Alt and press arrow keys.">' +
+        '<span class="grip-dots">⣿</span>' + badge + "</div>" +
+      '<div class="col-name" title="' + esc(c.name) + '">' + esc(c.name || "(unnamed)") + "</div>" +
+      meta +
+      '<div class="col-ctrl">' +
+        '<button class="tog" data-len="' + idx + '" aria-pressed="' + isLen + '"' +
+          (c.allNum ? "" : " disabled") + ' title="Use as tube length">LEN</button>' +
+        '<button class="tog" data-show="' + idx + '" aria-pressed="' + shown + '"' +
+          (isLen || full ? " disabled" : "") + ' title="Show on controller">SHOW</button>' +
+        '<button class="tog" data-split="' + idx + '" aria-pressed="' + isSplit + '"' +
+          (isLen ? " disabled" : "") + ' title="One file per value">SPLIT</button>' +
+      "</div>" +
+      '<div class="col-vals">' + vals + "</div>";
+    strip.appendChild(d);
+  });
+
+  strip.querySelectorAll("[data-len]").forEach(b => b.onclick = () => {
+    const i = +b.dataset.len;
+    ST.lengthIdx = i;
+    ST.shown = ST.shown.filter(x => x !== i);
+    if (ST.splitIdx === i) ST.splitIdx = null;
+    renderAll();
+  });
+  strip.querySelectorAll("[data-show]").forEach(b => b.onclick = () => {
+    const i = +b.dataset.show;
+    if (ST.shown.includes(i)) ST.shown = ST.shown.filter(x => x !== i);
+    else if (ST.shown.length < MAX_LABELS) ST.shown.push(i);
+    renderAll();
+  });
+  strip.querySelectorAll("[data-split]").forEach(b => b.onclick = () => {
+    const i = +b.dataset.split;
+    ST.splitIdx = ST.splitIdx === i ? null : i;
+    renderAll();
+  });
+
+  wireDrag(strip);
+  $("col-tally").innerHTML = ST.cols.length + " COLUMNS · <b>" +
+    (ST.cols[0] ? ST.cols[0].vals.length : 0) + "</b> ROWS · " +
+    ST.shown.length + "/" + MAX_LABELS + " SHOWN";
+}
+
+/* pointer-based reorder — works with mouse and touch alike */
+function wireDrag(strip) {
+  let src = null, marker = null, side = null;
+
+  const clear = () => {
+    strip.querySelectorAll(".col").forEach(el =>
+      el.classList.remove("dragging", "drop-before", "drop-after"));
+  };
+
+  strip.querySelectorAll(".col-grip").forEach(grip => {
+    const card = grip.parentElement;
+
+    grip.addEventListener("pointerdown", e => {
+      if (e.button && e.button !== 0) return;
+      e.preventDefault();
+      src = card;
+      card.classList.add("dragging");
+      grip.setPointerCapture(e.pointerId);
+    });
+
+    grip.addEventListener("pointermove", e => {
+      if (!src) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const over = el && el.closest ? el.closest(".col") : null;
+      strip.querySelectorAll(".col").forEach(c =>
+        c.classList.remove("drop-before", "drop-after"));
+      if (!over || over === src) { marker = null; return; }
+      const r = over.getBoundingClientRect();
+      side = (e.clientX < r.left + r.width / 2) ? "before" : "after";
+      over.classList.add("drop-" + side);
+      marker = over;
+    });
+
+    const finish = () => {
+      if (src && marker) {
+        const from = ST.order.indexOf(+src.dataset.idx);
+        const moved = ST.order.splice(from, 1)[0];
+        let to = ST.order.indexOf(+marker.dataset.idx);
+        if (side === "after") to += 1;
+        ST.order.splice(to, 0, moved);
+        src = null; marker = null;
+        renderAll();
+        return;
+      }
+      src = null; marker = null;
+      clear();
+    };
+    grip.addEventListener("pointerup", finish);
+    grip.addEventListener("pointercancel", finish);
+
+    grip.addEventListener("keydown", e => {
+      if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      e.preventDefault();
+      const i = ST.order.indexOf(+card.dataset.idx);
+      const j = e.key === "ArrowLeft" ? i - 1 : i + 1;
+      if (j < 0 || j >= ST.order.length) return;
+      [ST.order[i], ST.order[j]] = [ST.order[j], ST.order[i]];
+      renderAll();
+      const cards = $("strip").querySelectorAll(".col-grip");
+      if (cards[j]) cards[j].focus();
+    });
+  });
+}
+
+function renderPreview() {
+  const t = $("preview");
+  if (ST.lengthIdx === null) { t.innerHTML = ""; return; }
+  const defs = displayDefs();
+  const lc = ST.cols[ST.lengthIdx];
+  const n = Math.min(4, lc.vals.length);
+  let h = "<thead><tr>";
+  defs.forEach(d => h += "<th>" + esc(d.name) + "</th>");
+  h += "<th>Length</th></tr></thead><tbody>";
+  for (let r = 0; r < n; r++) {
+    h += "<tr>";
+    defs.forEach(d => h += "<td>" + esc(d.vals[r] || "") + "</td>");
+    h += '<td class="len">' + esc(lc.vals[r]) + "</td></tr>";
+  }
+  t.innerHTML = h + "</tbody>";
+}
+
+let urls = [];
+function renderFiles() {
+  urls.forEach(u => URL.revokeObjectURL(u));
+  urls = [];
+
+  const gs = groups();
+  const lc = ST.cols[ST.lengthIdx];
+  const defs = displayDefs();
+
+  let h = "<table><thead><tr><th>File</th><th>Pieces</th>" +
+          "<th>Tube length range</th></tr></thead><tbody>";
+  gs.slice(0, 60).forEach(g => {
+    const nums = g.rows.map(r => Number(lc.vals[r])).filter(Number.isFinite);
+    const blob = new Blob([buildTiger(g.file, g.rows, lc, defs)], { type: "application/xml" });
+    const url = URL.createObjectURL(blob);
+    urls.push(url);
+    h += "<tr><td><a class='dl' href='" + url + "' download='" + esc(g.file) + ".tiger'>" +
+         esc(g.file) + ".tiger</a></td>" +
+         "<td class='n'>" + g.rows.length + "</td>" +
+         "<td class='n'>" + (nums.length
+           ? fmt(Math.min(...nums)) + "–" + fmt(Math.max(...nums)) + " mm" : "—") + "</td></tr>";
+  });
+  if (gs.length > 60) h += "<tr><td class='n' colspan='3'>… and " + (gs.length - 60) + " more</td></tr>";
+  $("files").innerHTML = h + "</tbody></table>";
+  $("file-tally").innerHTML = "<b>" + gs.length + "</b> FILE" + (gs.length === 1 ? "" : "S");
+  return gs;
+}
+
+function validate() {
+  const box = $("map-status");
+  box.innerHTML = "";
+
+  if (ST.lengthIdx === null) {
+    const cands = ST.cols.filter(c => c.inBand);
+    let msg = "Choose the tube length column.";
+    if (cands.length > 1) msg += " Several sit inside machine range: " +
+      cands.map(c => "<b>" + esc(c.name) + "</b>").join(", ") + ".";
+    box.appendChild(statusLine("bad", "length", msg));
+    return false;
+  }
+
+  const col = ST.cols[ST.lengthIdx];
+  const bad = [];
+  col.vals.forEach((v, i) => {
+    const n = v === "" ? NaN : Number(v);
+    if (!Number.isFinite(n)) bad.push("row " + (i + 2) + ": " + (v === "" ? "(empty)" : v) + " not a number");
+    else if (n < MIN_MM || n > MAX_MM) bad.push("row " + (i + 2) + ": " + v + " mm outside " + MIN_MM + "–" + MAX_MM);
+  });
+
+  if (bad.length) {
+    box.appendChild(statusLine("bad", "blocked",
+      bad.length + " length value" + (bad.length > 1 ? "s" : "") + " can't be cut:<ul>" +
+      bad.slice(0, 10).map(s => "<li>" + esc(s) + "</li>").join("") +
+      (bad.length > 10 ? "<li>… and " + (bad.length - 10) + " more</li>" : "") + "</ul>"));
+    return false;
+  }
+
+  const nums = col.vals.map(Number);
+  box.appendChild(statusLine("good", "ready",
+    "<b>" + nums.length + "</b> pieces · " + fmt(Math.min(...nums)) + "–" +
+    fmt(Math.max(...nums)) + " mm"));
+
+  if (ST.splitIdx !== null) {
+    const sc = ST.cols[ST.splitIdx];
+    if (sc.uniq > 40) box.appendChild(statusLine("warn", "split",
+      "<b>" + esc(sc.name) + "</b> has " + sc.uniq + " distinct values — that's " +
+      sc.uniq + " files. TigerStop holds 100 lists."));
+  }
+
+  const long = groups().filter(g => g.file.length > 18);
+  if (long.length) box.appendChild(statusLine("warn", "names",
+    long.length === 1
+      ? "<b>" + esc(long[0].file) + "</b> is " + long[0].file.length +
+        " characters — over 18 truncates on the controller."
+      : "<b>" + long.length + "</b> names run past 18 characters and truncate on the " +
+        "controller, longest <b>" + Math.max(...long.map(g => g.file.length)) + "</b>."));
+  return true;
+}
+
+function renderAll() {
+  renderStrip();
+  const ok = validate();
+  $("stage-export").hidden = ST.lengthIdx === null;
+  if (ST.lengthIdx !== null) { renderPreview(); renderFiles(); }
+  const name = $("fname").value.trim();
+  $("save").disabled = !ok || !name;
+  if (ok && name) {
+    const n = groups().length;
+    $("save").textContent = n === 1 ? "Save file" : "Save " + n + " files";
+  } else $("save").textContent = "Save";
+  $("save-status").innerHTML = "";
+}
+
+/* ---------- load ---------- */
+function load(file) {
+  const rd = new FileReader();
+  rd.onload = () => {
+    const box = $("load-status");
+    box.innerHTML = "";
+    const rows = parseCSV(rd.result);
+    if (rows.length < 2) {
+      box.appendChild(statusLine("bad", "empty", "No data rows in that file."));
+      return;
+    }
+    const header = rows[0].map(h => h.trim());
+    const data = rows.slice(1);
+    const widths = [...new Set(data.map(r => r.length))];
+    if (widths.length > 1) {
+      box.appendChild(statusLine("bad", "ragged",
+        "Rows have differing field counts (" + widths.sort((a, b) => a - b).join(", ") +
+        "). Every piece would misalign — fix the CSV first."));
+      return;
+    }
+    if (widths[0] !== header.length) {
+      box.appendChild(statusLine("bad", "mismatch",
+        "Header has " + header.length + " columns, data rows have " + widths[0] + "."));
+      return;
+    }
+
+    const cols = profile(data, header);
+    const lenCol = cols.find(c => c.field === "length");
+    const guess = lenCol ? lenCol.idx : null;
+
+    const shown = [];
+    ["tube", "radius", "flute", "vent", "chunk", "sled"].forEach(f => {
+      const c = cols.find(c => c.field === f && c.idx !== guess);
+      if (c && shown.length < MAX_LABELS) shown.push(c.idx);
+    });
+
+    ST = {
+      cols, lengthIdx: guess, shown, splitIdx: null,
+      order: cols.map(c => c.idx),
+    };
+    $("drop-lead").textContent = file.name;
+    $("fname").value = file.name.replace(/\.csv$/i, "").slice(0, 40);
+    if (!lenCol) box.appendChild(statusLine("warn", "length",
+      "No column named like a length — choose one."));
+    $("stage-map").hidden = false;
+    renderAll();
+    $("stage-map").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  rd.onerror = () => {
+    $("load-status").innerHTML = "";
+    $("load-status").appendChild(statusLine("bad", "unreadable", "Couldn't read that file."));
+  };
+  rd.readAsText(file);
+}
+
+/* ---------- wiring ---------- */
+const drop = $("drop"), fileIn = $("file");
+drop.onclick = () => fileIn.click();
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileIn.click(); } };
+fileIn.onchange = () => { if (fileIn.files[0]) load(fileIn.files[0]); };
+["dragenter", "dragover"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) load(f); });
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => e.preventDefault());
+
+$("fname").oninput = () => { if (ST) renderAll(); };
+
+/* Anchor must be in the document for the download to fire in every browser. */
+function pull(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 10000);
+}
+
+$("save").onclick = async () => {
+  const lc = ST.cols[ST.lengthIdx];
+  const defs = displayDefs();
+  const gs = groups();
+  const box = $("save-status");
+  box.innerHTML = "";
+
+  const made = gs.map(g => ({
+    name: g.file + ".tiger",
+    text: buildTiger(g.file, g.rows, lc, defs),
+    n: g.rows.length,
+  }));
+  const pieces = made.reduce((a, m) => a + m.n, 0);
+
+  // Best path: write straight to disk where the browser allows it.
+  try {
+    if (made.length === 1 && window.showSaveFilePicker) {
+      const h = await window.showSaveFilePicker({
+        suggestedName: made[0].name,
+        types: [{ description: "TigerStop cutlist", accept: { "application/xml": [".tiger"] } }],
+      });
+      const w = await h.createWritable();
+      await w.write(new Blob([made[0].text]));
+      await w.close();
+      box.appendChild(statusLine("good", "saved",
+        "<b>" + esc(made[0].name) + "</b> · " + made[0].n + " pieces"));
+      return;
+    }
+    if (made.length > 1 && window.showDirectoryPicker) {
+      const dir = await window.showDirectoryPicker({ mode: "readwrite" });
+      for (const m of made) {
+        const fh = await dir.getFileHandle(m.name, { create: true });
+        const w = await fh.createWritable();
+        await w.write(new Blob([m.text]));
+        await w.close();
+      }
+      box.appendChild(statusLine("good", "saved",
+        "<b>" + made.length + "</b> files · " + pieces + " pieces"));
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    // Otherwise fall through to a download.
+  }
+
+  // Fallback: one .tiger, or a zip when there are several.
+  if (made.length === 1) {
+    pull(new Blob([made[0].text], { type: "application/xml" }), made[0].name);
+    box.appendChild(statusLine("good", "saved",
+      "<b>" + esc(made[0].name) + "</b> · " + made[0].n + " pieces. " +
+      "Check your downloads — or use the file link below."));
+  } else {
+    const base = (safe($("fname").value) || "cutlists");
+    pull(zip(made), base + ".zip");
+    box.appendChild(statusLine("good", "saved",
+      "<b>" + esc(base) + ".zip</b> · " + made.length + " files · " + pieces + " pieces. " +
+      "Unzip and copy the .tiger files across."));
+  }
+};
+</script>
+
+</body>
+</html>
