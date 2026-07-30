@@ -403,10 +403,8 @@ function profile(rows, header) {
       const s = [...nums].sort((a, b) => a - b);
       median = s[Math.floor(s.length / 2)];
     }
-    const uniq = new Set(vals).size;
     return {
-      idx: i, name: h, vals, allNum, median, uniq,
-      constant: uniq === 1,
+      idx: i, name: h, vals, allNum, median, uniq: new Set(vals).size,
       field: matchField(h),
       inBand: allNum && median !== null && median >= MIN_MM && median <= MAX_MM,
     };
@@ -597,10 +595,7 @@ function renderStrip() {
       ? '<span class="ord">' + String(shownOrder.indexOf(idx) + 1).padStart(2, "0") + "</span>"
       : "<span></span>";
 
-    // A column that never changes costs a controller column and tells you nothing.
-    const meta = c.constant
-      ? '<div class="col-meta cand">SAME EVERY ROW</div>'
-      : c.allNum
+    const meta = c.allNum
       ? '<div class="col-meta' + (c.inBand && !isLen ? " cand" : "") + '">' +
           (c.inBand && !isLen ? "IN RANGE · " : "") + "med " + fmt(c.median) + "</div>"
       : '<div class="col-meta">' + c.uniq + " values</div>";
@@ -806,21 +801,6 @@ function validate() {
       sc.uniq + " files. TigerStop holds 100 lists."));
   }
 
-  // Controller screen space is scarce — Length, Quantity and Remaining are
-  // always there, so every avoidable label column is worth reclaiming.
-  const waste = ST.shown.filter(i => ST.cols[i].constant);
-  if (waste.length) box.appendChild(statusLine("warn", "space",
-    (waste.length === 1 ? "<b>" + esc(ST.cols[waste[0]].name) + "</b> is"
-      : waste.map(i => "<b>" + esc(ST.cols[i].name) + "</b>").join(", ") + " are") +
-    " the same in every row. Turning " + (waste.length === 1 ? "it" : "them") +
-    " off frees " + waste.length + " column" + (waste.length === 1 ? "" : "s") +
-    " on the controller."));
-
-  if (ST.splitIdx !== null && ST.shown.includes(ST.splitIdx))
-    box.appendChild(statusLine("warn", "space",
-      "<b>" + esc(ST.cols[ST.splitIdx].name) + "</b> is the split column, so every " +
-      "row within each file carries the same value. Turning off SHOW frees a column."));
-
   const long = groups().filter(g => g.file.length > 18);
   if (long.length) box.appendChild(statusLine("warn", "names",
     long.length === 1
@@ -875,10 +855,9 @@ function load(file) {
     const lenCol = cols.find(c => c.field === "length");
     const guess = lenCol ? lenCol.idx : null;
 
-    // Skip columns that never vary — they'd waste a slot on the controller.
     const shown = [];
     ["tube", "radius", "flute", "vent", "chunk", "sled"].forEach(f => {
-      const c = cols.find(c => c.field === f && c.idx !== guess && !c.constant);
+      const c = cols.find(c => c.field === f && c.idx !== guess);
       if (c && shown.length < MAX_LABELS) shown.push(c.idx);
     });
 
