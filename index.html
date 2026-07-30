@@ -111,7 +111,7 @@
     touch-action: pan-y;
   }
   .col {
-    flex: 0 0 auto; min-width: 138px;
+    flex: 0 0 auto; min-width: 152px;
     border-right: 1px solid var(--line);
     display: flex; flex-direction: column;
     position: relative;
@@ -128,26 +128,20 @@
   .col.drop-before::before { left: -2px; }
   .col.drop-after::after { right: -2px; }
 
+  /* Drag handle only — no role or order information lives here. */
   .col-grip {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: var(--s2); padding: 5px var(--s3) 4px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px var(--s3) 3px;
     cursor: grab; user-select: none; -webkit-user-select: none;
     border-bottom: 1px solid var(--line);
   }
   .col-grip:active { cursor: grabbing; }
   .col-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .grip-dots {
-    font-family: var(--mono); font-size: 12px; line-height: 1;
-    color: var(--line-strong); letter-spacing: -1px;
+    font-family: var(--mono); font-size: 11px; line-height: 1.4;
+    color: var(--line-strong); letter-spacing: 2px;
   }
   .col-grip:hover .grip-dots { color: var(--accent); }
-  .role {
-    font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
-    padding: 1px 5px; border-radius: 2px;
-  }
-  .role.length { background: var(--accent); color: var(--on-accent); }
-  .role.split { color: var(--accent); border: 1px dashed var(--accent); }
-  .role.slot { color: var(--muted); }
 
   .col-name {
     font-family: var(--mono); font-size: 12.5px; font-weight: 600;
@@ -161,13 +155,16 @@
   }
   .col-meta.cand { color: var(--warn); }
 
+  /* One row per role, so full words fit and nothing is cryptic. */
   .col-ctrl {
-    display: flex; gap: var(--s1); padding: 0 var(--s3) var(--s2);
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 0 var(--s3) var(--s3);
     border-bottom: 1px solid var(--line);
   }
   .tog {
-    flex: 1; font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
-    padding: 4px 0; text-align: center;
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+    padding: 5px var(--s2); text-align: left;
     background: transparent; color: var(--muted);
     border: 1px solid var(--line-strong); border-radius: 2px; cursor: pointer;
   }
@@ -175,8 +172,12 @@
   .tog[aria-pressed="true"] {
     background: var(--accent); border-color: var(--accent); color: var(--on-accent);
   }
-  .tog:disabled { opacity: .3; cursor: not-allowed; }
+  .tog:disabled { opacity: .28; cursor: not-allowed; }
   .tog:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tog .ord {
+    font-size: 9.5px; letter-spacing: .1em; opacity: .85;
+    font-variant-numeric: tabular-nums;
+  }
 
   .col-vals { padding: var(--s2) var(--s3) var(--s3); }
   .col-vals div {
@@ -186,7 +187,13 @@
   }
   .col.is-length .col-vals div { color: var(--ink); }
 
-  /* readout */
+  /* display example */
+  .example { display: flex; flex-direction: column; gap: var(--s2); }
+  .example-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
+  }
+
   .readout {
     background: #101820; border: 1px solid #2A3A45; border-radius: 3px;
     padding: var(--s3); overflow-x: auto;
@@ -315,7 +322,10 @@
       <span class="tally" id="col-tally"></span>
     </div>
     <div class="strip" id="strip"></div>
-    <div class="readout"><table id="preview"></table></div>
+    <div class="example">
+      <div class="example-label">Display example</div>
+      <div class="readout"><table id="preview"></table></div>
+    </div>
     <div class="status" id="map-status"></div>
   </section>
 
@@ -581,10 +591,8 @@ function renderStrip() {
     d.className = "col" + (isLen ? " is-length" : "") + (isSplit ? " is-split" : "");
     d.dataset.idx = idx;
 
-    const badge = isLen ? '<span class="role length">LENGTH</span>'
-      : isSplit ? '<span class="role split">SPLIT</span>'
-      : shown ? '<span class="role slot">' +
-          String(shownOrder.indexOf(idx) + 1).padStart(2, "0") + "</span>"
+    const slot = shown
+      ? '<span class="ord">' + String(shownOrder.indexOf(idx) + 1).padStart(2, "0") + "</span>"
       : "<span></span>";
 
     const meta = c.allNum
@@ -599,16 +607,20 @@ function renderStrip() {
     d.innerHTML =
       '<div class="col-grip" tabindex="0" role="button" ' +
         'aria-label="Reorder ' + esc(c.name) + '. Drag, or hold Alt and press arrow keys.">' +
-        '<span class="grip-dots">⣿</span>' + badge + "</div>" +
+        '<span class="grip-dots">⋮⋮</span></div>' +
       '<div class="col-name" title="' + esc(c.name) + '">' + esc(c.name || "(unnamed)") + "</div>" +
       meta +
       '<div class="col-ctrl">' +
         '<button class="tog" data-len="' + idx + '" aria-pressed="' + isLen + '"' +
-          (c.allNum ? "" : " disabled") + ' title="Use as tube length">LEN</button>' +
+          (c.allNum ? "" : " disabled") +
+          ' title="Cut to the values in this column"><span>LENGTH</span></button>' +
         '<button class="tog" data-show="' + idx + '" aria-pressed="' + shown + '"' +
-          (isLen || full ? " disabled" : "") + ' title="Show on controller">SHOW</button>' +
+          (isLen || full ? " disabled" : "") +
+          ' title="Show this column on the controller"><span>SHOW</span>' + slot + "</button>" +
         '<button class="tog" data-split="' + idx + '" aria-pressed="' + isSplit + '"' +
-          (isLen ? " disabled" : "") + ' title="One file per value">SPLIT</button>' +
+          (isLen ? " disabled" : "") +
+          ' title="Write one file per distinct value in this column">' +
+          "<span>SPLIT BY</span></button>" +
       "</div>" +
       '<div class="col-vals">' + vals + "</div>";
     strip.appendChild(d);
