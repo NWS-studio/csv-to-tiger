@@ -8,7 +8,7 @@ Bypasses TigerLink6 and CutListLinks.xml entirely. Reads any CSV, writes a
 Usage:
     python3 csv2tiger.py cutlist.csv
     python3 csv2tiger.py cutlist.csv --length Length --labels "Tube #,Radius"
-    python3 csv2tiger.py cutlist.csv --out "C:/Users/.../TigerLink/2230810/"
+    python3 csv2tiger.py cutlist.csv --out "D:/cutlists/"
 
 Defaults find a column named "Length" and label with "Tube #" and "Radius"
 if present. Everything is validated before anything is written.
@@ -20,14 +20,14 @@ import os
 import sys
 from xml.sax.saxutils import escape
 
-# Machine limits for the LIC TigerStop TS08 sistered to the Arnold cutter.
-# 153mm is the effective hard minimum documented from TigerStop support
-# (Basecamp, Oct 2024): the controller silently refuses positions below it.
+# Machine limits for a TigerStop TS08 with no miter positioner.
+# 153mm is the effective hard minimum: below it the controller silently
+# refuses to move. 2438mm is the TS08's 96in range. Adjust for your machine.
 MIN_LENGTH_MM = 153.0
 MAX_LENGTH_MM = 2438.0  # TS08 96" range
 
 # Fixed header values, taken from pristine TigerLink6 output. Verified
-# identical across every generated .tiger in the 2230810 folder.
+# identical across every .tiger TigerLink6 generated on our machine.
 DEFAULTS = {
     "style": "Setpoint",
     "unit": "Metric",

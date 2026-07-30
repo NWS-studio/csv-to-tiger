@@ -69,10 +69,10 @@ Both implementations were checked against real TigerLink6 output. `examples/`
 holds a source CSV and the `.tiger` TigerLink6 produced from it:
 
 ```
-python3 csv2tiger.py "examples/Odada  Individual replacements.csv" \
-  --labels "Tube #,Radius" --no-limit-check
+python3 csv2tiger.py "examples/Test swatch surface B 01_05 - Sheet1.csv" \
+  --labels "Tube #,Radius"
 diff "examples/reference-tigerlink6-output.tiger" \
-     "examples/Odada  Individual replacements.tiger"
+     "examples/Test swatch surface B 01_05 - Sheet1.tiger"
 ```
 
 Identical apart from one display label — the reference used `Tube #:` with a colon,
@@ -81,7 +81,7 @@ absence of a BOM all match.
 
 ## Machine notes
 
-LIC TigerStop TS08, serial 2230810, on COM3.
+Defaults target a TigerStop TS08 with no miter positioner. Adjust for yours.
 
 - **153 mm** effective minimum position. Below it the controller silently refuses
   to move (TigerStop support, Oct 2024).
