@@ -721,13 +721,14 @@ function renderPreview() {
   const defs = displayDefs();
   const lc = ST.cols[ST.lengthIdx];
   const n = Math.min(4, lc.vals.length);
-  let h = "<thead><tr>";
+  // Length sits left-most, as Columns[0] does on the controller.
+  let h = "<thead><tr><th>Length</th>";
   defs.forEach(d => h += "<th>" + esc(d.name) + "</th>");
-  h += "<th>Length</th></tr></thead><tbody>";
+  h += "</tr></thead><tbody>";
   for (let r = 0; r < n; r++) {
-    h += "<tr>";
+    h += '<tr><td class="len">' + esc(lc.vals[r]) + "</td>";
     defs.forEach(d => h += "<td>" + esc(d.vals[r] || "") + "</td>");
-    h += '<td class="len">' + esc(lc.vals[r]) + "</td></tr>";
+    h += "</tr>";
   }
   t.innerHTML = h + "</tbody>";
 }
