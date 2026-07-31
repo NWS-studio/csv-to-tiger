@@ -291,8 +291,6 @@
   }
   .seg button:disabled { opacity: .28; cursor: not-allowed; }
   .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; position: relative; }
-  .opt-note { font-size: 12.5px; color: var(--muted); padding-bottom: 2px; }
-  .opt-note[hidden] { display: none; }
 
   /* status */
   .status { display: flex; flex-direction: column; gap: var(--s2); }
@@ -376,14 +374,6 @@
           <button type="button" data-v="zip" aria-pressed="false">One .zip</button>
         </div>
       </div>
-      <div class="opt">
-        <span class="opt-label">Where</span>
-        <div class="seg" id="seg-dest" role="group" aria-label="Where to save">
-          <button type="button" data-v="pick" aria-pressed="true">Choose location</button>
-          <button type="button" data-v="dl" aria-pressed="false">Downloads folder</button>
-        </div>
-      </div>
-      <div class="opt-note" id="opt-note" hidden></div>
     </div>
     <div class="files" id="files"></div>
     <div class="status" id="save-status"></div>
@@ -946,39 +936,21 @@ document.addEventListener("drop", e => e.preventDefault());
 $("fname").oninput = () => { if (ST) renderAll(); };
 
 /* ---------- save options ---------- */
-const CAN_PICK_FILE = typeof window.showSaveFilePicker === "function";
-const CAN_PICK_DIR = typeof window.showDirectoryPicker === "function";
+const SAVE = { pack: "files" };   // files | zip
 
-const SAVE = {
-  pack: "files",                                            // files | zip
-  dest: CAN_PICK_FILE || CAN_PICK_DIR ? "pick" : "dl",      // pick  | dl
-};
-
-function paintSeg(id, key) {
-  $(id).querySelectorAll("button").forEach(b =>
-    b.setAttribute("aria-pressed", String(b.dataset.v === SAVE[key])));
+function paintSeg() {
+  $("seg-pack").querySelectorAll("button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.v === SAVE.pack)));
 }
 
-["pack", "dest"].forEach(key => {
-  const id = "seg-" + key;
-  $(id).querySelectorAll("button").forEach(b => {
-    b.onclick = () => {
-      SAVE[key] = b.dataset.v;
-      paintSeg(id, key);
-      if (ST) renderAll();
-    };
-  });
-  paintSeg(id, key);
+$("seg-pack").querySelectorAll("button").forEach(b => {
+  b.onclick = () => {
+    SAVE.pack = b.dataset.v;
+    paintSeg();
+    if (ST) renderAll();
+  };
 });
-
-if (!CAN_PICK_FILE && !CAN_PICK_DIR) {
-  const b = $("seg-dest").querySelector('[data-v="pick"]');
-  b.disabled = true;
-  b.title = "This browser can't offer a save location";
-  paintSeg("seg-dest", "dest");
-  $("opt-note").textContent = "This browser saves to your downloads folder only.";
-  $("opt-note").hidden = false;
-}
+paintSeg();
 
 /* Anchor must be in the document for the download to fire in every browser. */
 function pull(blob, filename) {
@@ -991,7 +963,7 @@ function pull(blob, filename) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 10000);
 }
 
-$("save").onclick = async () => {
+$("save").onclick = () => {
   const lc = ST.cols[ST.lengthIdx];
   const defs = displayDefs();
   const gs = groups();
@@ -1010,54 +982,14 @@ $("save").onclick = async () => {
   const tail = (made.length === 1 ? "" : " · " + made.length + " files") +
     " · " + pieces + " pieces";
 
-  // One write target — a single .tiger, or the zip.
-  const oneBlob = asZip
-    ? { blob: zip(made), name: zipName,
-        type: [{ description: "Zip archive", accept: { "application/zip": [".zip"] } }] }
-    : { blob: new Blob([made[0].text], { type: "application/xml" }), name: made[0].name,
-        type: [{ description: "TigerStop cutlist", accept: { "application/xml": [".tiger"] } }] };
+  // One .tiger, or the zip — a single trip to the downloads folder.
   const single = asZip || made.length === 1;
-
-  // Write straight to a chosen location. The picker id lets the browser
-  // reopen where you last saved.
-  if (SAVE.dest === "pick") {
-    try {
-      if (single && CAN_PICK_FILE) {
-        const h = await window.showSaveFilePicker({
-          id: "tigerout", suggestedName: oneBlob.name, types: oneBlob.type,
-        });
-        const w = await h.createWritable();
-        await w.write(oneBlob.blob);
-        await w.close();
-        box.appendChild(statusLine("good", "saved", "<b>" + esc(h.name) + "</b>" + tail));
-        return;
-      }
-      if (!single && CAN_PICK_DIR) {
-        const dir = await window.showDirectoryPicker({ id: "tigerout", mode: "readwrite" });
-        for (const m of made) {
-          const fh = await dir.getFileHandle(m.name, { create: true });
-          const w = await fh.createWritable();
-          await w.write(new Blob([m.text], { type: "application/xml" }));
-          await w.close();
-        }
-        box.appendChild(statusLine("good", "saved",
-          "Written to <b>" + esc(dir.name) + "</b>" + tail));
-        return;
-      }
-      box.appendChild(statusLine("warn", "location",
-        "This browser can't offer a location — sent to your downloads folder instead."));
-    } catch (err) {
-      if (err && err.name === "AbortError") return;
-      box.appendChild(statusLine("warn", "location",
-        "Couldn't write there — sent to your downloads folder instead."));
-    }
-  }
-
-  // Downloads folder.
   if (single) {
-    pull(oneBlob.blob, oneBlob.name);
+    const blob = asZip ? zip(made) : new Blob([made[0].text], { type: "application/xml" });
+    const name = asZip ? zipName : made[0].name;
+    pull(blob, name);
     box.appendChild(statusLine("good", "saved",
-      "<b>" + esc(oneBlob.name) + "</b>" + tail + ". " +
+      "<b>" + esc(name) + "</b>" + tail + ". " +
       (asZip ? "Unzip and copy the .tiger files across."
              : "Check your downloads — or use the file link below.")));
   } else {
